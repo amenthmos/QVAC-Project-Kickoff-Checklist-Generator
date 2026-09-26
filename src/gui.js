@@ -19,14 +19,18 @@ function serveStatic(res) {
 }
 
 function readBody(req) {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     let body = "";
     req.on("data", (chunk) => (body += chunk));
     req.on("end", () => {
+      if (!body) return resolve({});
       try {
-        resolve(JSON.parse(body || "{}"));
+        resolve(JSON.parse(body));
       } catch {
-        resolve({});
+        // Malformed JSON is a client error, not "no fields supplied" — reject
+        // distinctly so the handler can return 400 instead of silently
+        // falling through to generate()'s generic "missing field" error.
+        reject(Object.assign(new Error("Invalid JSON in request body"), { statusCode: 400 }));
       }
     });
   });
@@ -47,7 +51,7 @@ async function main() {
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify(result));
       } catch (error) {
-        res.writeHead(500, { "Content-Type": "application/json" });
+        res.writeHead(error.statusCode || 500, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: error.message }));
       }
       return;
